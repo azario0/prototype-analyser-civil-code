@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Law Book RAG System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      .loader {
+        border-top-color: #3498db;
+        -webkit-animation: spinner 1.5s linear infinite;
+        animation: spinner 1.5s linear infinite;
+      }
+
+      @-webkit-keyframes spinner {
+        0% {
+          -webkit-transform: rotate(0deg);
+        }
+        100% {
+          -webkit-transform: rotate(360deg);
+        }
+      }
+
+      @keyframes spinner {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+      .answer-content p {
+        margin-bottom: 1rem;
+      }
+
+      .answer-content strong {
+        color: #2c3e50;
+      }
+
+      .source-content {
+        border-left: 4px solid #3498db;
+        padding-left: 1rem;
+      }
+    </style>
+  </head>
+  <body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto p-4">
+      <h1 class="text-3xl font-bold mb-8 text-center">Law Book RAG System</h1>
+
+      <div class="mb-8">
+        <h2 class="text-xl font-semibold mb-4">Upload a new law book</h2>
+        <form id="uploadForm" class="flex items-center space-x-4">
+          <input type="file" id="fileInput" accept=".pdf" class="hidden" />
+          <label
+            for="fileInput"
+            class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded cursor-pointer"
+          >
+            Choose PDF
+          </label>
+          <button
+            type="submit"
+            class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded"
+          >
+            Upload
+          </button>
+        </form>
+        <div id="uploadStatus" class="mt-2"></div>
+      </div>
+
+      <div class="mb-8">
+        <h2 class="text-xl font-semibold mb-4">Ask a question</h2>
+        <select id="bookSelect" class="w-full p-2 mb-4 border rounded">
+          <option value="">Select a book</option>
+          {% for book in books %}
+          <option value="{{ book }}">{{ book }}</option>
+          {% endfor %}
+        </select>
+        <textarea
+          id="questionInput"
+          class="w-full p-2 mb-4 border rounded"
+          rows="3"
+          placeholder="Enter your question here"
+        ></textarea>
+        <button
+          id="askButton"
+          class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded"
+        >
+          Ask Question
+        </button>
+      </div>
+
+      <div id="answerSection" class="hidden">
+        <h2 class="text-xl font-semibold mb-4">Answer</h2>
+        <div
+          id="answerContent"
+          class="answer-content bg-white p-4 rounded shadow"
+        ></div>
+
+        <h2 class="text-xl font-semibold mt-8 mb-4">Relevant Articles</h2>
+        <div id="sourcesContent" class="source-content space-y-4"></div>
+      </div>
+
+      <div
+        id="loader"
+        class="hidden fixed top-0 left-0 right-0 bottom-0 w-full h-screen z-50 overflow-hidden bg-gray-700 opacity-75 flex flex-col items-center justify-center"
+      >
+        <div
+          class="loader ease-linear rounded-full border-4 border-t-4 border-gray-200 h-12 w-12 mb-4"
+        ></div>
+        <h2 class="text-center text-white text-xl font-semibold">Loading...</h2>
+        <p class="w-1/3 text-center text-white">
+          This may take a few seconds, please don't close this page.
+        </p>
+      </div>
+    </div>
+
+    <script>
+      const uploadForm = document.getElementById("uploadForm");
+      const fileInput = document.getElementById("fileInput");
+      const uploadStatus = document.getElementById("uploadStatus");
+      const bookSelect = document.getElementById("bookSelect");
+      const questionInput = document.getElementById("questionInput");
+      const askButton = document.getElementById("askButton");
+      const answerSection = document.getElementById("answerSection");
+      const answerContent = document.getElementById("answerContent");
+      const sourcesContent = document.getElementById("sourcesContent");
+      const loader = document.getElementById("loader");
+
+      uploadForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const file = fileInput.files[0];
+        if (!file) {
+          uploadStatus.textContent = "Please select a file";
+          return;
+        }
+
+        const formData = new FormData();
+        formData.append("file", file);
+
+        loader.classList.remove("hidden");
+        try {
+          const response = await fetch("/upload", {
+            method: "POST",
+            body: formData,
+          });
+          const result = await response.json();
+          uploadStatus.textContent = result.message || result.error;
+          if (response.ok) {
+            // Refresh the book list
+            location.reload();
+          }
+        } catch (error) {
+          uploadStatus.textContent = "An error occurred during upload";
+        } finally {
+          loader.classList.add("hidden");
+        }
+      });
+
+      askButton.addEventListener("click", async () => {
+        const book = bookSelect.value;
+        const question = questionInput.value;
+
+        if (!book || !question) {
+          alert("Please select a book and enter a question");
+          return;
+        }
+
+        loader.classList.remove("hidden");
+        try {
+          const response = await fetch("/ask", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ book, question }),
+          });
+          const result = await response.json();
+
+          answerContent.textContent = result.answer;
+
+          sourcesContent.innerHTML = "";
+          result.sources.forEach((source, index) => {
+            const sourceDiv = document.createElement("div");
+            sourceDiv.className = "bg-white p-4 rounded shadow";
+            sourceDiv.innerHTML = `
+                        <h3 class="font-semibold">Article ${index + 1}</h3>
+                        <p>${source.content}</p>
+                        <p class="text-sm text-gray-600">Page: ${
+                          source.page
+                        }</p>
+                    `;
+            sourcesContent.appendChild(sourceDiv);
+          });
+
+          answerSection.classList.remove("hidden");
+        } catch (error) {
+          alert("An error occurred while processing your question");
+        } finally {
+          loader.classList.add("hidden");
+        }
+      });
+      askButton.addEventListener("click", async () => {
+        const book = bookSelect.value;
+        const question = questionInput.value;
+
+        if (!book || !question) {
+          alert("Please select a book and enter a question");
+        }
+
+        loader.classList.remove("hidden");
+        try {
+          const response = await fetch("/ask", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ book, question }),
+          });
+          const result = await response.json();
+
+          // Format the answer with proper line breaks and paragraphs
+          const formattedAnswer = formatAnswer(result.answer);
+          answerContent.innerHTML = formattedAnswer;
+
+          sourcesContent.innerHTML = "";
+          result.sources.forEach((source, index) => {
+            const sourceDiv = document.createElement("div");
+            sourceDiv.className = "bg-white p-4 rounded shadow mt-4";
+            sourceDiv.innerHTML = `
+                    <h3 class="font-semibold text-lg mb-2">Article ${
+                      index + 1
+                    }</h3>
+                    <p class="mb-2">${formatAnswer(source.content)}</p>
+                    <p class="text-sm text-gray-600">Page: ${source.page}</p>
+                `;
+            sourcesContent.appendChild(sourceDiv);
+          });
+
+          answerSection.classList.remove("hidden");
+        } catch (error) {
+          alert("An error occurred while processing your question");
+        } finally {
+          loader.classList.add("hidden");
+        }
+      });
+
+      function formatAnswer(text) {
+        // Split the text into paragraphs
+        const paragraphs = text.split("***").filter((p) => p.trim() !== "");
+
+        // Format each paragraph
+        const formattedParagraphs = paragraphs.map((p) => {
+          const [title, ...content] = p.split(":");
+          if (content.length > 0) {
+            return `<p class="mb-4"><strong>${title.trim()}:</strong> ${content
+              .join(":")
+              .trim()}</p>`;
+          } else {
+            return `<p class="mb-4">${title.trim()}</p>`;
+          }
+        });
+
+        return formattedParagraphs.join("");
+      }
+    </script>
+  </body>
+</html>
